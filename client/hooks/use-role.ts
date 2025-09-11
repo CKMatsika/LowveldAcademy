@@ -6,7 +6,8 @@ const STORAGE_KEY = "schoolapp.role";
 
 export function useRole() {
   const [role, setRoleState] = useState<Role>(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    const saved =
+      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
     return (saved as Role) || "Admin";
   });
 

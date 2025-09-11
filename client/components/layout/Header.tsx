@@ -23,11 +23,19 @@ export function Header() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button aria-label="Notifications" className="h-9 w-9 rounded-md bg-white/15 flex items-center justify-center">
+          <button
+            aria-label="Notifications"
+            className="h-9 w-9 rounded-md bg-white/15 flex items-center justify-center"
+          >
             <Bell className="h-5 w-5" />
           </button>
           <div className="relative">
-            <Button size="sm" variant="secondary" className="bg-white text-primary hover:bg-white/90" onClick={() => setOpen((v) => !v)}>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="bg-white text-primary hover:bg-white/90"
+              onClick={() => setOpen((v) => !v)}
+            >
               {role}
               <ChevronDown className="h-4 w-4" />
             </Button>

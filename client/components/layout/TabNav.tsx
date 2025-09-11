@@ -1,5 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { Home, MessageCircle, CreditCard, Settings2, Users } from "lucide-react";
+import {
+  Home,
+  MessageCircle,
+  CreditCard,
+  Settings2,
+  Users,
+} from "lucide-react";
 import { useRole } from "@/hooks/use-role";
 
 export function TabNav() {
@@ -9,8 +15,16 @@ export function TabNav() {
     { to: "/", label: "Home", icon: Home },
     { to: "/classes", label: "Classes", icon: Users },
     { to: "/messages", label: "Messages", icon: MessageCircle },
-    { to: "/invoices", label: role === "Parent" ? "Invoices" : "Finance", icon: CreditCard },
-    { to: "/settings", label: role === "Admin" ? "Settings" : "Profile", icon: Settings2 },
+    {
+      to: "/invoices",
+      label: role === "Parent" ? "Invoices" : "Finance",
+      icon: CreditCard,
+    },
+    {
+      to: "/settings",
+      label: role === "Admin" ? "Settings" : "Profile",
+      icon: Settings2,
+    },
   ];
 
   return (
