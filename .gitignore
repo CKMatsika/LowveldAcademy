@@ -24,4 +24,10 @@ dist-ssr
 *.sw?
 
 .config/
-!.env
+# Environment and local secrets
+.env
+server/.env
+
+# SQLite databases
+*.sqlite
+server/*.sqlite

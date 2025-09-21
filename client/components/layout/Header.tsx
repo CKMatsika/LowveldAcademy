@@ -3,23 +3,45 @@ import { useRole, Role } from "@/hooks/use-role";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { setToken } from "@/lib/api";
+import { useNavigate } from "react-router-dom";
 
 const roles: Role[] = ["Admin", "Teacher", "Parent", "Student"];
 
 export function Header() {
   const { role, setRole } = useRole();
   const [open, setOpen] = useState(false);
+  const [logoLoaded, setLogoLoaded] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <header className="sticky top-0 z-40 bg-gradient-to-r from-primary to-indigo-500 text-primary-foreground shadow-sm">
       <div className="container px-4 py-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="h-9 w-9 rounded-md bg-white/20 flex items-center justify-center">
-            <School className="h-5 w-5" />
+          <div className="h-9 w-9 rounded-md bg-white/20 flex items-center justify-center overflow-hidden">
+            {logoLoaded ? (
+              <img
+                src="/logo.jpg"
+                alt="School Logo"
+                className="h-9 w-9 object-contain"
+                onError={() => setLogoLoaded(false)}
+              />
+            ) : (
+              <>
+                <img
+                  src="/logo.jpg"
+                  alt="School Logo"
+                  className="h-0 w-0 opacity-0"
+                  onLoad={() => setLogoLoaded(true)}
+                  onError={() => setLogoLoaded(false)}
+                />
+                <School className="h-5 w-5" />
+              </>
+            )}
           </div>
           <div>
-            <div className="text-sm opacity-90">Aurora High School</div>
-            <div className="text-xs opacity-80">Smart School Management</div>
+            <div className="text-sm opacity-90">Lowveld Academy</div>
+            <div className="text-xs opacity-80">Primary School Management</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -29,6 +51,17 @@ export function Header() {
           >
             <Bell className="h-5 w-5" />
           </button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="bg-white text-primary hover:bg-white/90"
+            onClick={() => {
+              setToken(null);
+              navigate("/login", { replace: true });
+            }}
+          >
+            Logout
+          </Button>
           <div className="relative">
             <Button
               size="sm"

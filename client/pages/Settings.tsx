@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { load, save } from "@/lib/storage";
+import { setToken } from "@/lib/api";
+import { useNavigate } from "react-router-dom";
 
 interface School {
   name: string;
@@ -11,6 +13,104 @@ interface School {
   email: string;
   phone: string;
   address: string;
+}
+
+// --- Subjects Manager ---
+import { apiFetch } from "@/lib/api";
+
+function SubjectsManager() {
+  const [subjects, setSubjects] = useState<{ id: number; name: string }[]>([]);
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  async function load() {
+    try {
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+      const list = await apiFetch<{ id: number; name: string }[]>("/api/subjects");
+      setSubjects(list);
+    } catch (e: any) {
+      setError(e.message || "Failed to load subjects");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function add() {
+    if (!name.trim()) return;
+    try {
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+      const created = await apiFetch<{ id: number; name: string }>("/api/subjects", {
+        method: "POST",
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (created) setSubjects((prev) => [...prev, created]);
+      setName("");
+    } catch (e: any) {
+      setError(e.message || "Failed to add subject");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function remove(id: number) {
+    try {
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+      await apiFetch(`/api/subjects/${id}`, { method: "DELETE" });
+      setSubjects((prev) => prev.filter((s) => s.id !== id));
+      setInfo("Subject deleted");
+    } catch (e: any) {
+      // Try to show server message
+      try { const o = JSON.parse(e.message); setError(o.error || "Failed to delete"); }
+      catch { setError(e.message || "Failed to delete"); }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Subjects</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="flex items-center gap-2">
+          <input
+            className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+            placeholder="Add new subject (e.g., Mathematics)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Button size="sm" onClick={add} disabled={loading}>Add</Button>
+          <Button size="sm" variant="outline" onClick={load} disabled={loading}>Refresh</Button>
+        </div>
+        {error && <div className="text-sm text-red-600">{error}</div>}
+        {info && <div className="text-sm text-green-700">{info}</div>}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {subjects.map((s) => (
+            <span key={s.id} className="px-2 py-1 border rounded-md text-sm flex items-center gap-2">
+              {s.name}
+              <Button size="sm" className="h-7 px-2" variant="destructive" onClick={() => remove(s.id)} disabled={loading}>Delete</Button>
+            </span>
+          ))}
+          {subjects.length === 0 && (
+            <span className="text-xs text-muted-foreground">No subjects yet</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 interface Profile {
   name: string;
@@ -102,11 +202,14 @@ function AdminSettings() {
           <Button onClick={() => save(SCHOOL_KEY, school)}>Save</Button>
         </CardContent>
       </Card>
+
+      <SubjectsManager />
     </div>
   );
 }
 
 function UserProfile() {
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile>(() =>
     load<Profile>(PROFILE_KEY, { name: "", email: "" }),
   );
@@ -173,6 +276,23 @@ function UserProfile() {
           />
           <Button disabled={!pwd.next || pwd.next !== pwd.confirm}>
             Update Password
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Session</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setToken(null);
+              navigate("/login", { replace: true });
+            }}
+          >
+            Log out
           </Button>
         </CardContent>
       </Card>
