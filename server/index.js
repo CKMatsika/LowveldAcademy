@@ -4,12 +4,12 @@ const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
-app.use(cors({
-  origin: 'http://localhost:8080' // allow your Vite dev server
-}));
+// In production we serve same-origin; during local dev, Vite runs on localhost and this remains permissive.
+app.use(cors());
 
 const DB_PATH = process.env.DB_PATH || './dev.sqlite';
 const db = new sqlite3.Database(DB_PATH, (err) => {
@@ -199,6 +199,17 @@ app.post('/api/invoices', authMiddleware, async (req, res) => {
 
 // ---- Start server ----
 const PORT = process.env.PORT || 4000;
+
+// ---- Static client build (single-URL deployment) ----
+const clientDist = path.join(__dirname, '../client/dist');
+app.use(express.static(clientDist));
+
+// SPA fallback: send index.html for non-API routes
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(clientDist, 'index.html'));
+});
+
 app.listen(PORT, () => {
-  console.log(`Backend listening on http://localhost:${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
 });
