@@ -17,9 +17,6 @@ const DB_PATH = process.env.DB_PATH || './dev.sqlite';
 try {
   const dbDir = path.dirname(DB_PATH);
   if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-
-// ---- Health check ----
-app.get('/health', (req, res) => res.json({ ok: true }));
 } catch (e) {
   console.error('Failed to ensure DB directory', e);
 }
@@ -242,6 +239,9 @@ if (!clientDist) {
   clientDist = candidates[0];
 }
 app.use(express.static(clientDist));
+
+// ---- Health check (under /api namespace) ----
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // SPA fallback: send index.html for non-API routes
 app.get('*', (req, res, next) => {
