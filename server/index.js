@@ -5,6 +5,7 @@ const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json());
@@ -12,6 +13,13 @@ app.use(express.json());
 app.use(cors());
 
 const DB_PATH = process.env.DB_PATH || './dev.sqlite';
+// Ensure DB directory exists (especially when using a mounted volume like /var/data)
+try {
+  const dbDir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+} catch (e) {
+  console.error('Failed to ensure DB directory', e);
+}
 const db = new sqlite3.Database(DB_PATH, (err) => {
   if (err) {
     console.error('Failed to open DB', err);
@@ -201,13 +209,26 @@ app.post('/api/invoices', authMiddleware, async (req, res) => {
 const PORT = process.env.PORT || 4000;
 
 // ---- Static client build (single-URL deployment) ----
-const clientDist = path.join(__dirname, '../client/dist');
+const candidates = [
+  path.join(__dirname, '../dist/spa'), // root build to dist/spa
+  path.join(__dirname, '../client/dist'), // client build when building from client/
+];
+let clientDist = candidates.find((p) => {
+  try { return fs.existsSync(p) && fs.statSync(p).isDirectory(); } catch { return false; }
+});
+if (!clientDist) {
+  console.error('Client build folder not found. Checked:', candidates);
+  clientDist = candidates[0];
+}
 app.use(express.static(clientDist));
 
 // SPA fallback: send index.html for non-API routes
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
-  res.sendFile(path.join(clientDist, 'index.html'));
+  const indexPath = path.join(clientDist, 'index.html');
+  if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
+  console.error('index.html not found at', indexPath);
+  return res.status(500).send('Client build not found');
 });
 
 app.listen(PORT, () => {
