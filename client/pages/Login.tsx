@@ -8,7 +8,7 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation() as any;
   const [email, setEmail] = useState("admin@lowveld.local");
-  const [password, setPassword] = useState("123456");
+  const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

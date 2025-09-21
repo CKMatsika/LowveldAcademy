@@ -17,6 +17,9 @@ const DB_PATH = process.env.DB_PATH || './dev.sqlite';
 try {
   const dbDir = path.dirname(DB_PATH);
   if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+
+// ---- Health check ----
+app.get('/health', (req, res) => res.json({ ok: true }));
 } catch (e) {
   console.error('Failed to ensure DB directory', e);
 }
@@ -55,7 +58,7 @@ async function initDb() {
     name TEXT,
     email TEXT UNIQUE,
     password TEXT,
-    role TEXT DEFAULT 'user'
+    role TEXT DEFAULT 'Admin'
   );`);
 
   await run(`CREATE TABLE IF NOT EXISTS classes (
@@ -81,7 +84,25 @@ async function initDb() {
     FOREIGN KEY(student_id) REFERENCES students(id)
   );`);
 }
-initDb().catch(err => console.error('DB init error', err));
+initDb()
+  .then(seedAdmin)
+  .catch(err => console.error('DB init error', err));
+
+async function seedAdmin() {
+  try {
+    const row = await get('SELECT COUNT(*) as c FROM users');
+    if (!row || row.c === 0) {
+      const name = 'Administrator';
+      const email = 'admin@lowveld.local';
+      const password = 'admin123';
+      const hashed = await bcrypt.hash(password, 10);
+      await run('INSERT INTO users (name, email, password, role) VALUES (?,?,?,?)', [name, email, hashed, 'Admin']);
+      console.log('Seeded default admin:', email, '(please change the password)');
+    }
+  } catch (e) {
+    console.error('Seed admin failed', e);
+  }
+}
 
 // ---- Auth middleware ----
 const SECRET = process.env.JWT_SECRET || 'dev_secret';
