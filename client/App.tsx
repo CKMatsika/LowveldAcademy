@@ -125,22 +125,16 @@ export default App;
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const token = load<string | null>("auth.token", null);
-  const userStr = load<string | null>("user", null);
+  const user = load<any>("user", null);
 
   // Check if we have both token and user info
-  if (!token || !userStr) {
+  if (!token || !user) {
     console.log('No token or user info found, redirecting to login');
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  try {
-    const user = JSON.parse(userStr);
-    if (!user || !user.id) {
-      console.log('Invalid user data, redirecting to login');
-      return <Navigate to="/login" state={{ from: location }} replace />;
-    }
-  } catch (err) {
-    console.error('Error parsing user data:', err);
+  if (!user || !user.id) {
+    console.log('Invalid user data, redirecting to login');
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 

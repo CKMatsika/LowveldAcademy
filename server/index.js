@@ -134,6 +134,8 @@ async function seedAdmin() {
 
 // ---- Auth middleware ----
 const SECRET = process.env.JWT_SECRET || 'dev_secret';
+console.log('JWT_SECRET:', SECRET);
+console.log('All env vars:', Object.keys(process.env).filter(k => k.includes('JWT') || k.includes('SECRET')));
 function authMiddleware(req, res, next) {
   const auth = req.headers.authorization;
   console.log('Auth middleware check - Authorization header:', auth ? 'present' : 'missing');
@@ -231,8 +233,8 @@ app.get('/api/users', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Access denied. Admin role required.' });
     }
 
-    const users = await all(`SELECT id, name, email, role, is_active, created_at
-                            FROM users ORDER BY created_at DESC`);
+    const users = await all(`SELECT id, name, email, role, is_active
+                            FROM users ORDER BY id DESC`);
     res.json(users);
   } catch (err) {
     console.error('Get users error:', err);
@@ -256,7 +258,7 @@ app.post('/api/users', authMiddleware, async (req, res) => {
     const result = await run('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
       [name, email, hashed, role]);
 
-    const user = await get('SELECT id, name, email, role, is_active, created_at FROM users WHERE id = ?',
+    const user = await get('SELECT id, name, email, role, is_active FROM users WHERE id = ?',
       [result.lastID]);
 
     res.json(user);
@@ -280,7 +282,7 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
     await run('UPDATE users SET name = ?, email = ?, role = ?, is_active = ?, updated_at = datetime("now") WHERE id = ?',
       [name, email, role, is_active, req.params.id]);
 
-    const user = await get('SELECT id, name, email, role, is_active, created_at FROM users WHERE id = ?',
+    const user = await get('SELECT id, name, email, role, is_active FROM users WHERE id = ?',
       [req.params.id]);
 
     if (!user) {
@@ -343,7 +345,7 @@ app.post('/api/parents/register', async (req, res) => {
     const parentResult = await run('INSERT INTO parents (user_id, phone, address) VALUES (?, ?, ?)',
       [result.lastID, phone || '', address || '']);
 
-    const user = await get('SELECT id, name, email, role, is_active, created_at FROM users WHERE id = ?',
+    const user = await get('SELECT id, name, email, role, is_active FROM users WHERE id = ?',
       [result.lastID]);
     const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, SECRET, { expiresIn: '1d' });
 
@@ -523,6 +525,22 @@ app.post('/api/classes', authMiddleware, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+// ---- Teachers endpoints ----
+app.get('/api/teachers', authMiddleware, async (req, res) => {
+  try {
+    // For now, return empty array since teachers table doesn't exist
+    res.json([]);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ---- Subjects endpoints ----
+app.get('/api/subjects', authMiddleware, async (req, res) => {
+  try {
+    // For now, return empty array since subjects table doesn't exist
+    res.json([]);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
 // ---- Invoices endpoints (simple) ----
 app.get('/api/invoices', authMiddleware, async (req, res) => {
   try {
@@ -561,7 +579,7 @@ app.use(express.static(clientDist));
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // SPA fallback: send index.html for non-API routes
-app.get('*', (req, res, next) => {
+app.use((req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   const indexPath = path.join(clientDist, 'index.html');
   if (fs.existsSync(indexPath)) return res.sendFile(indexPath);

@@ -31,10 +31,15 @@ export default function Timetable() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [selectedTeacher, setSelectedTeacher] = useState<string>("");
+
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  const [copyFromDay, setCopyFromDay] = useState<number>(1);
+  const [copyToDay, setCopyToDay] = useState<number>(1);
+  const [copyTargetClass, setCopyTargetClass] = useState<string>("");
 
   const canEdit = role === "Admin" || role === "Teacher";
 
@@ -49,11 +54,7 @@ export default function Timetable() {
     } catch (e: any) {
       setError(e.message || "Failed to load data");
     }
-
-  // ---- Bulk copy tools ----
-  const [copyFromDay, setCopyFromDay] = useState<number>(1);
-  const [copyToDay, setCopyToDay] = useState<number>(1);
-  const [copyTargetClass, setCopyTargetClass] = useState<string>("");
+  }
 
   async function copyDay() {
     if (!(mode === "class" ? selectedClass : selectedTeacher)) return;

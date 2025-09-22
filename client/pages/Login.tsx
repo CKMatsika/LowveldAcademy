@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { apiFetch, setToken, getToken } from "@/lib/api";
+import { apiFetch, setToken } from "@/lib/api";
+import { save, load } from "@/lib/storage";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ export default function Login() {
 
   // Check if already authenticated
   useEffect(() => {
-    const token = getToken();
+    const token = load<string | null>("auth.token", null);
     if (token) {
       console.log('Token found, redirecting to dashboard');
       navigate('/', { replace: true });
@@ -37,8 +38,8 @@ export default function Login() {
       console.log('Login successful, token received');
       setToken(res.token);
 
-      // Store user info
-      localStorage.setItem('user', JSON.stringify(res.user));
+      // Store user info using the storage library
+      save('user', res.user);
 
       navigate(from, { replace: true });
     } catch (err: any) {
