@@ -160,6 +160,43 @@ function authMiddleware(req, res, next) {
   });
 }
 
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    console.log('Login attempt for email:', email);
+
+    if (!email || !password) {
+      console.log('Missing email or password');
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const user = await get('SELECT * FROM users WHERE email = ?', [email]);
+    if (!user) {
+      console.log('User not found:', email);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Check if user is active
+    if (!user.is_active) {
+      console.log('User account is deactivated:', email);
+      return res.status(401).json({ error: 'Account is deactivated. Please contact administrator.' });
+    }
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) {
+      console.log('Invalid password for user:', email);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, SECRET, { expiresIn: '1d' });
+    console.log('Login successful for user:', email, 'with role:', user.role);
+    res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role }, token });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ---- Auth routes ----
 app.post('/api/auth/register', async (req, res) => {
   try {
