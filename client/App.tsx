@@ -12,12 +12,12 @@ import Classes from "./pages/Classes";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
+import ParentRegistration from "./pages/ParentRegistration";
 import Teachers from "./pages/Teachers";
 import Timetable from "./pages/Timetable";
 import Students from "./pages/Students";
 import Attendance from "./pages/Attendance";
 import Staff from "./pages/Staff";
-import { load } from "./lib/storage";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +29,7 @@ export const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<ParentRegistration />} />
           <Route
             path="/"
             element={
@@ -117,13 +118,31 @@ export const App = () => (
   </QueryClientProvider>
 );
 
+import { load } from "./lib/storage";
+
 export default App;
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const token = load<string | null>("auth.token", null);
-  if (!token) {
+  const userStr = load<string | null>("user", null);
+
+  // Check if we have both token and user info
+  if (!token || !userStr) {
+    console.log('No token or user info found, redirecting to login');
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
+
+  try {
+    const user = JSON.parse(userStr);
+    if (!user || !user.id) {
+      console.log('Invalid user data, redirecting to login');
+      return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+  } catch (err) {
+    console.error('Error parsing user data:', err);
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
   return <>{children}</>;
 }

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { load, save } from "@/lib/storage";
 import { setToken } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
+import { apiFetch } from "@/lib/api";
 
 interface School {
   name: string;
@@ -15,9 +16,16 @@ interface School {
   address: string;
 }
 
-// --- Subjects Manager ---
-import { apiFetch } from "@/lib/api";
+interface Profile {
+  name: string;
+  email: string;
+  phone?: string;
+}
 
+const SCHOOL_KEY = "school.settings";
+const PROFILE_KEY = "user.profile";
+
+// --- Subjects Manager ---
 function SubjectsManager() {
   const [subjects, setSubjects] = useState<{ id: number; name: string }[]>([]);
   const [name, setName] = useState("");
@@ -112,37 +120,171 @@ function SubjectsManager() {
     </Card>
   );
 }
-interface Profile {
-  name: string;
-  email: string;
-  phone?: string;
-}
 
-const SCHOOL_KEY = "schoolapp.school";
-const PROFILE_KEY = "schoolapp.profile";
+// --- User Management ---
+function UserManagement() {
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUser, setNewUser] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "Teacher"
+  });
 
-export default function Settings() {
-  const { role } = useRole();
-  const isAdmin = role === "Admin";
+  async function loadUsers() {
+    try {
+      setLoading(true);
+      setError(null);
+      const userList = await apiFetch<any[]>("/api/users");
+      setUsers(userList);
+    } catch (e: any) {
+      setError(e.message || "Failed to load users");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  async function addUser() {
+    if (!newUser.name || !newUser.email || !newUser.password) return;
+    try {
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+      await apiFetch("/api/users", {
+        method: "POST",
+        body: JSON.stringify(newUser),
+      });
+      setInfo("User added successfully");
+      setNewUser({ name: "", email: "", password: "", role: "Teacher" });
+      setShowAddUser(false);
+      await loadUsers();
+    } catch (e: any) {
+      setError(e.message || "Failed to add user");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleUserStatus(userId: number, isActive: boolean) {
+    try {
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+      await apiFetch(`/api/users/${userId}`, {
+        method: "PUT",
+        body: JSON.stringify({ is_active: !isActive }),
+      });
+      setInfo(`User ${!isActive ? 'activated' : 'deactivated'} successfully`);
+      await loadUsers();
+    } catch (e: any) {
+      setError(e.message || "Failed to update user status");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <AppLayout>
-      <h1 className="text-xl font-semibold mb-2">
-        {isAdmin ? "School Settings" : "Profile"}
-      </h1>
-      {isAdmin ? <AdminSettings /> : <UserProfile />}
-    </AppLayout>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">User Management</CardTitle>
+          <Button onClick={() => setShowAddUser(true)} disabled={loading}>
+            Add User
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {error && <div className="text-sm text-red-600">{error}</div>}
+        {info && <div className="text-sm text-green-600">{info}</div>}
+
+        {showAddUser && (
+          <Card className="border-2 border-dashed">
+            <CardContent className="space-y-2 pt-4">
+              <input
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                placeholder="Full Name"
+                value={newUser.name}
+                onChange={(e) => setNewUser({...newUser, name: e.target.value})}
+              />
+              <input
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                placeholder="Email"
+                type="email"
+                value={newUser.email}
+                onChange={(e) => setNewUser({...newUser, email: e.target.value})}
+              />
+              <input
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                placeholder="Password"
+                type="password"
+                value={newUser.password}
+                onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+              />
+              <select
+                className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                value={newUser.role}
+                onChange={(e) => setNewUser({...newUser, role: e.target.value})}
+              >
+                <option value="Teacher">Teacher</option>
+                <option value="Admin">Admin</option>
+                <option value="Parent">Parent</option>
+              </select>
+              <div className="flex gap-2">
+                <Button onClick={addUser} disabled={loading || !newUser.name || !newUser.email || !newUser.password}>
+                  Create User
+                </Button>
+                <Button variant="outline" onClick={() => setShowAddUser(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="space-y-2">
+          {users.map((user) => (
+            <div key={user.id} className="flex items-center justify-between p-2 border rounded">
+              <div>
+                <div className="text-sm font-medium">{user.name}</div>
+                <div className="text-xs text-muted-foreground">{user.email}</div>
+                <div className="text-xs">Role: {user.role}</div>
+              </div>
+              <div className="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => toggleUserStatus(user.id, user.is_active)}
+                  disabled={loading}
+                >
+                  {user.is_active ? 'Deactivate' : 'Activate'}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
-function AdminSettings() {
+// --- School Settings ---
+function SchoolSettings() {
   const [school, setSchool] = useState<School>(() =>
     load<School>(SCHOOL_KEY, {
-      name: "Aurora High School",
+      name: "Lowveld Academy",
       logoUrl: "",
-      email: "info@aurora.edu",
-      phone: "+1 555 0123",
-      address: "123 Aurora Ave",
-    }),
+      email: "",
+      phone: "",
+      address: "",
+    })
   );
 
   useEffect(() => {
@@ -150,68 +292,46 @@ function AdminSettings() {
   }, [school]);
 
   return (
-    <div className="space-y-3">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">School Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <input
-            className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-            placeholder="School Name"
-            value={school.name}
-            onChange={(e) => setSchool({ ...school, name: e.target.value })}
-          />
-          <input
-            className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-            placeholder="Contact Email"
-            value={school.email}
-            onChange={(e) => setSchool({ ...school, email: e.target.value })}
-          />
-          <input
-            className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-            placeholder="Phone"
-            value={school.phone}
-            onChange={(e) => setSchool({ ...school, phone: e.target.value })}
-          />
-          <input
-            className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-            placeholder="Address"
-            value={school.address}
-            onChange={(e) => setSchool({ ...school, address: e.target.value })}
-          />
-          <div className="flex items-center gap-2">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const url = URL.createObjectURL(file);
-                setSchool({ ...school, logoUrl: url });
-              }}
-            />
-            {school.logoUrl && (
-              <img
-                src={school.logoUrl}
-                alt="Logo"
-                className="h-10 w-10 rounded-md object-cover"
-              />
-            )}
-          </div>
-          <Button onClick={() => save(SCHOOL_KEY, school)}>Save</Button>
-        </CardContent>
-      </Card>
-
-      <SubjectsManager />
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">School Settings</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <input
+          className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+          placeholder="School Name"
+          value={school.name}
+          onChange={(e) => setSchool({ ...school, name: e.target.value })}
+        />
+        <input
+          className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+          placeholder="Email"
+          value={school.email}
+          onChange={(e) => setSchool({ ...school, email: e.target.value })}
+        />
+        <input
+          className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+          placeholder="Phone"
+          value={school.phone}
+          onChange={(e) => setSchool({ ...school, phone: e.target.value })}
+        />
+        <textarea
+          className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+          placeholder="Address"
+          value={school.address}
+          onChange={(e) => setSchool({ ...school, address: e.target.value })}
+        />
+        <Button onClick={() => save(SCHOOL_KEY, school)}>Save</Button>
+      </CardContent>
+    </Card>
   );
 }
 
+// --- User Profile ---
 function UserProfile() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile>(() =>
-    load<Profile>(PROFILE_KEY, { name: "", email: "" }),
+    load<Profile>(PROFILE_KEY, { name: "", email: "" })
   );
   const [pwd, setPwd] = useState({ current: "", next: "", confirm: "" });
 
@@ -299,3 +419,29 @@ function UserProfile() {
     </div>
   );
 }
+
+// --- Main Settings Component ---
+export default function Settings() {
+  const { role } = useRole();
+
+  // Only show user management to admins
+  const showUserManagement = role === "Admin";
+
+  return (
+    <AppLayout>
+      <div className="space-y-4">
+        <div>
+          <h1 className="text-2xl font-bold">Settings</h1>
+          <p className="text-muted-foreground">Manage your application settings</p>
+        </div>
+
+        <div className="grid gap-4">
+          {showUserManagement && <UserManagement />}
+          <SchoolSettings />
+          <SubjectsManager />
+          <UserProfile />
+        </div>
+      </div>
+    </AppLayout>
+  );
+}  

@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { apiFetch, setToken } from "@/lib/api";
+import { apiFetch, setToken, getToken } from "@/lib/api";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -14,18 +14,35 @@ export default function Login() {
 
   const from = location.state?.from?.pathname || "/";
 
+  // Check if already authenticated
+  useEffect(() => {
+    const token = getToken();
+    if (token) {
+      console.log('Token found, redirecting to dashboard');
+      navigate('/', { replace: true });
+    }
+  }, [navigate]);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch<{ token: string }>("/api/auth/login", {
+      console.log('Attempting login with:', email);
+      const res = await apiFetch<{ token: string; user: any }>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
+
+      console.log('Login successful, token received');
       setToken(res.token);
+
+      // Store user info
+      localStorage.setItem('user', JSON.stringify(res.user));
+
       navigate(from, { replace: true });
     } catch (err: any) {
+      console.error('Login error:', err);
       setError(() => {
         try {
           const o = JSON.parse(err.message);
@@ -66,7 +83,7 @@ export default function Login() {
               {loading ? "Signing in..." : "Sign in"}
             </Button>
             <div className="text-xs text-center text-muted-foreground">
-              Don’t have an account? <Link to="#" className="underline">Ask admin</Link>
+              Don’t have an account? <Link to="/register" className="underline">Sign up as parent</Link> • <Link to="#" className="underline">Ask admin</Link>
             </div>
           </form>
         </CardContent>
