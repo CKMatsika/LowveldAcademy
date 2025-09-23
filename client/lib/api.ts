@@ -3,11 +3,11 @@ import { load, save } from "./storage";
 const TOKEN_KEY = "auth.token";
 
 // Backend base URL
-// - In development (served by Vite on localhost), talk to the API dev server on port 4000
+// - In development (served by Vite on localhost), talk to the API dev server on port 3000
 // - In production (served by the same Express server), use same-origin requests
 const API_BASE_URL =
   (typeof window !== "undefined" && window.location.hostname === "localhost")
-    ? "http://localhost:4000"
+    ? "http://localhost:3000"
     : ""; // same-origin
 
 export function getToken(): string | null {
