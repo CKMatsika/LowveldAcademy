@@ -13,16 +13,11 @@ app.use(express.json());
 app.use(cors());
 
 // Choose a DB path that works locally and on Render (no persistent disk by default)
-// Prefer explicit DB_PATH; otherwise, use /var/data if writable, else /tmp/dev.sqlite
-let DB_PATH = process.env.DB_PATH || './dev.sqlite';
-try {
-  const preferred = '/var/data/dev.sqlite';
-  // If no explicit DB_PATH and /var/data is writable, use it; else fall back to /tmp
-  if (!process.env.DB_PATH) {
-    try { fs.mkdirSync('/var/data', { recursive: true }); DB_PATH = preferred; }
-    catch { DB_PATH = '/tmp/dev.sqlite'; }
-  }
-} catch {}
+// Prefer explicit DB_PATH; otherwise:
+// - In production (Render), default to /tmp/dev.sqlite (always writable)
+// - In development, default to ./dev.sqlite
+let DB_PATH = process.env.DB_PATH
+  || (process.env.RENDER ? '/tmp/dev.sqlite' : './dev.sqlite');
 // Ensure DB directory exists (especially when using a mounted volume)
 try {
   const dbDir = path.dirname(DB_PATH);

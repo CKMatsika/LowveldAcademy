@@ -16,7 +16,7 @@ export function createServer() {
   app.use(cors());
 
   // --- SQLite setup ---
-  const DB_PATH = process.env.DB_PATH || "./dev.sqlite";
+  const DB_PATH = process.env.DB_PATH || (process.env.RENDER ? "/tmp/dev.sqlite" : "./dev.sqlite");
   const db = new sqlite3.Database(DB_PATH);
 
   // Promisified helpers for sqlite3
