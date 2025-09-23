@@ -123,7 +123,6 @@ export default function Timetable() {
     setLoading(false);
     setInfo(`Copy week complete: created ${created}, skipped ${skipped}`);
   }
-  }
 
   async function loadEntries() {
     try {
