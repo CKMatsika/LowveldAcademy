@@ -563,6 +563,42 @@ app.post('/api/invoices', authMiddleware, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+// ---- Analytics overview (used by Dashboard) ----
+app.get('/api/analytics/overview', authMiddleware, async (req, res) => {
+  try {
+    async function tableExists(name) {
+      try { const row = await get("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name]); return !!row; }
+      catch { return false; }
+    }
+    async function countIfExists(table) {
+      if (!(await tableExists(table))) return 0;
+      try { const r = await get(`SELECT COUNT(*) as c FROM ${table}`); return (r && r.c) || 0; } catch { return 0; }
+    }
+    const [students, teachers, staff] = await Promise.all([
+      countIfExists('students'),
+      countIfExists('teachers'),
+      countIfExists('staff'),
+    ]);
+
+    let studPresent = 0, teachPresent = 0, staffPresent = 0;
+    const hasAttendance = await tableExists('attendance_logs');
+    if (hasAttendance) {
+      const today = new Date().toISOString().slice(0,10);
+      try { const r = await get("SELECT COUNT(*) as c FROM attendance_logs WHERE entity_type='student' AND date=? AND status='Present'", [today]); studPresent = r?.c || 0; } catch {}
+      try { const r = await get("SELECT COUNT(*) as c FROM attendance_logs WHERE entity_type='teacher' AND date=? AND status='Present'", [today]); teachPresent = r?.c || 0; } catch {}
+      try { const r = await get("SELECT COUNT(*) as c FROM attendance_logs WHERE entity_type='staff' AND date=? AND status='Present'", [today]); staffPresent = r?.c || 0; } catch {}
+    }
+
+    res.json({
+      totals: { students, teachers, staff },
+      attendanceToday: { students: studPresent, teachers: teachPresent, staff: staffPresent },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ---- Start server ----
 const PORT = process.env.PORT || 4000;
 
