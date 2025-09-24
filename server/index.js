@@ -116,6 +116,121 @@ async function initDb() {
     updated_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY(student_id) REFERENCES students(id)
   );`);
+
+  // Non-teaching staff
+  await run(`CREATE TABLE IF NOT EXISTS staff (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT,
+    last_name TEXT,
+    title TEXT,
+    email TEXT,
+    phone TEXT
+  );`);
+
+  // Attendance logs (for students, teachers, staff)
+  await run(`CREATE TABLE IF NOT EXISTS attendance_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL, -- student | teacher | staff
+    entity_id INTEGER NOT NULL,
+    date TEXT NOT NULL, -- YYYY-MM-DD
+    status TEXT NOT NULL, -- Present | Absent | Late
+    remarks TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(entity_type, entity_id, date)
+  );`);
+
+  // Teachers table
+  await run(`CREATE TABLE IF NOT EXISTS teachers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT,
+    last_name TEXT,
+    email TEXT,
+    phone TEXT,
+    subject TEXT
+  );`);
+
+  // Subjects table
+  await run(`CREATE TABLE IF NOT EXISTS subjects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE
+  );`);
+
+  // Class streams (e.g., A, B, Yellow, Green) tied to a class
+  await run(`CREATE TABLE IF NOT EXISTS class_streams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id INTEGER,
+    name TEXT,
+    FOREIGN KEY(class_id) REFERENCES classes(id)
+  );`);
+
+  // Guardians table
+  await run(`CREATE TABLE IF NOT EXISTS guardians (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name TEXT,
+    last_name TEXT,
+    phone TEXT,
+    email TEXT,
+    address TEXT
+  );`);
+
+  // Student-Subject mapping
+  await run(`CREATE TABLE IF NOT EXISTS student_subjects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER,
+    subject_id INTEGER,
+    FOREIGN KEY(student_id) REFERENCES students(id),
+    FOREIGN KEY(subject_id) REFERENCES subjects(id)
+  );`);
+
+  // Teacher-Subject mapping
+  await run(`CREATE TABLE IF NOT EXISTS teacher_subjects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    teacher_id INTEGER,
+    subject_id INTEGER,
+    FOREIGN KEY(teacher_id) REFERENCES teachers(id),
+    FOREIGN KEY(subject_id) REFERENCES subjects(id)
+  );`);
+
+  // Class-Subject mapping
+  await run(`CREATE TABLE IF NOT EXISTS class_subjects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id INTEGER,
+    subject_id INTEGER,
+    FOREIGN KEY(class_id) REFERENCES classes(id),
+    FOREIGN KEY(subject_id) REFERENCES subjects(id)
+  );`);
+
+  // Teacher-Class assignments
+  await run(`CREATE TABLE IF NOT EXISTS teacher_classes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    teacher_id INTEGER,
+    class_id INTEGER,
+    FOREIGN KEY(teacher_id) REFERENCES teachers(id),
+    FOREIGN KEY(class_id) REFERENCES classes(id)
+  );`);
+
+  // Timetable entries
+  await run(`CREATE TABLE IF NOT EXISTS timetable_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id INTEGER,
+    teacher_id INTEGER,
+    subject TEXT,
+    day_of_week INTEGER,   -- 1=Mon .. 7=Sun
+    start_time TEXT,       -- '08:00'
+    end_time TEXT,         -- '09:00'
+    room TEXT,
+    FOREIGN KEY(class_id) REFERENCES classes(id),
+    FOREIGN KEY(teacher_id) REFERENCES teachers(id)
+  );`);
+
+  // Add missing columns to students
+  const studentCols = await all("PRAGMA table_info(students)");
+  if (!studentCols.some(c => c.name === "guardian_id")) {
+    await run("ALTER TABLE students ADD COLUMN guardian_id INTEGER REFERENCES guardians(id)");
+  }
+  if (!studentCols.some(c => c.name === "class_stream_id")) {
+    await run("ALTER TABLE students ADD COLUMN class_stream_id INTEGER REFERENCES class_streams(id)");
+  }
 }
 initDb()
   .then(seedAdmin)
@@ -391,9 +506,10 @@ app.get('/api/parents/students', authMiddleware, async (req, res) => {
 // ---- Students endpoints ----
 app.get('/api/students', authMiddleware, async (req, res) => {
   try {
-    const rows = await all(`SELECT s.*, c.name as class_name
+    const rows = await all(`SELECT s.*, c.name as class_name, cs.name as stream_name
                            FROM students s
-                           LEFT JOIN classes c ON s.class_id = c.id`);
+                           LEFT JOIN classes c ON s.class_id = c.id
+                           LEFT JOIN class_streams cs ON cs.id = s.class_stream_id`);
     res.json(rows);
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
@@ -418,9 +534,15 @@ app.post('/api/students', authMiddleware, async (req, res) => {
 
 app.get('/api/students/:id', authMiddleware, async (req, res) => {
   try {
-    const student = await get('SELECT * FROM students WHERE id = ?', [req.params.id]);
+    const student = await get(`SELECT s.*, c.name as class_name, cs.name as stream_name
+                               FROM students s
+                               LEFT JOIN classes c ON s.class_id = c.id
+                               LEFT JOIN class_streams cs ON cs.id = s.class_stream_id
+                               WHERE s.id = ?`, [req.params.id]);
     if (!student) return res.status(404).json({ error: 'Not found' });
-    res.json(student);
+    const guardian = student.guardian_id ? await get('SELECT * FROM guardians WHERE id = ?', [student.guardian_id]) : null;
+    const subjects = await all('SELECT sub.* FROM student_subjects ss JOIN subjects sub ON sub.id = ss.subject_id WHERE ss.student_id = ?', [req.params.id]);
+    res.json({ ...student, guardian, subjects });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -533,16 +655,125 @@ app.post('/api/classes', authMiddleware, async (req, res) => {
 // ---- Teachers endpoints ----
 app.get('/api/teachers', authMiddleware, async (req, res) => {
   try {
-    // For now, return empty array since teachers table doesn't exist
-    res.json([]);
+    const rows = await all("SELECT * FROM teachers ORDER BY id DESC");
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/teachers', authMiddleware, async (req, res) => {
+  try {
+    const { first_name, last_name, email, phone, subject } = req.body;
+    if (!first_name || !last_name) return res.status(400).json({ error: 'First and last name are required' });
+    const r = await run('INSERT INTO teachers (first_name, last_name, email, phone, subject) VALUES (?, ?, ?, ?, ?)', [first_name, last_name, email || null, phone || null, subject || null]);
+    const teacher = await get('SELECT * FROM teachers WHERE id = ?', [r.lastID]);
+    res.json(teacher);
+  } catch (err) {
+    if (err && err.message && err.message.includes('SQLITE_CONSTRAINT')) return res.status(400).json({ error: 'Email already exists' });
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.put('/api/teachers/:id', authMiddleware, async (req, res) => {
+  try {
+    const { first_name, last_name, email, phone, subject } = req.body;
+    await run('UPDATE teachers SET first_name = ?, last_name = ?, email = ?, phone = ?, subject = ? WHERE id = ?', [first_name, last_name, email || null, phone || null, subject || null, req.params.id]);
+    const teacher = await get('SELECT * FROM teachers WHERE id = ?', [req.params.id]);
+    if (!teacher) return res.status(404).json({ error: 'Not found' });
+    res.json(teacher);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.delete('/api/teachers/:id', authMiddleware, async (req, res) => {
+  try {
+    await run('DELETE FROM teachers WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ---- Staff endpoints ----
+app.get('/api/staff', authMiddleware, async (req, res) => {
+  try {
+    const rows = await all("SELECT * FROM staff ORDER BY id DESC");
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/staff', authMiddleware, async (req, res) => {
+  try {
+    const { first_name, last_name, title, email, phone } = req.body;
+    if (!first_name || !last_name) return res.status(400).json({ error: 'First and last name are required' });
+    const r = await run('INSERT INTO staff (first_name, last_name, title, email, phone) VALUES (?, ?, ?, ?, ?)', [first_name, last_name, title || null, email || null, phone || null]);
+    const row = await get('SELECT * FROM staff WHERE id = ?', [r.lastID]);
+    res.json(row);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.put('/api/staff/:id', authMiddleware, async (req, res) => {
+  try {
+    const { first_name, last_name, title, email, phone } = req.body;
+    await run('UPDATE staff SET first_name=?, last_name=?, title=?, email=?, phone=? WHERE id=?', [first_name, last_name, title || null, email || null, phone || null, req.params.id]);
+    const row = await get('SELECT * FROM staff WHERE id = ?', [req.params.id]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json(row);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/staff/:id', authMiddleware, async (req, res) => {
+  try {
+    await run('DELETE FROM staff WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ---- Class streams endpoints ----
+app.get('/api/class-streams', authMiddleware, async (req, res) => {
+  try {
+    const rows = await all("SELECT cs.*, c.name as class_name FROM class_streams cs JOIN classes c ON c.id = cs.class_id ORDER BY c.name, cs.name");
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/class-streams', authMiddleware, async (req, res) => {
+  try {
+    const { class_id, name } = req.body;
+    if (!class_id || !name) return res.status(400).json({ error: 'class_id and name required' });
+    const r = await run('INSERT OR IGNORE INTO class_streams (class_id, name) VALUES (?,?)', [class_id, name]);
+    const row = await get('SELECT * FROM class_streams WHERE id = ?', [r.lastID]);
+    res.json(row || (await get('SELECT * FROM class_streams WHERE class_id = ? AND name = ?', [class_id, name])));
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
 // ---- Subjects endpoints ----
 app.get('/api/subjects', authMiddleware, async (req, res) => {
   try {
-    // For now, return empty array since subjects table doesn't exist
-    res.json([]);
+    const rows = await all("SELECT * FROM subjects ORDER BY name");
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/subjects', authMiddleware, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const r = await run('INSERT OR IGNORE INTO subjects (name) VALUES (?)', [name]);
+    const row = await get('SELECT * FROM subjects WHERE id = ?', [r.lastID]);
+    res.json(row || (await get('SELECT * FROM subjects WHERE name = ?', [name])));
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/subjects/:id', authMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const ref = await get('SELECT COUNT(*) as cnt FROM student_subjects WHERE subject_id = ?', [id]);
+    if ((ref?.cnt || 0) > 0) {
+      return res.status(400).json({ error: 'Cannot delete: subject is assigned to students' });
+    }
+    await run('DELETE FROM subjects WHERE id = ?', [id]);
+    res.json({ success: true });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -560,6 +791,138 @@ app.post('/api/invoices', authMiddleware, async (req, res) => {
     const r = await run('INSERT INTO invoices (student_id, amount, status) VALUES (?, ?, ?)', [student_id, amount, status || 'draft']);
     const inv = await get('SELECT * FROM invoices WHERE id = ?', [r.lastID]);
     res.json(inv);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ---- Attendance endpoints ----
+app.get('/api/attendance/today', authMiddleware, async (req, res) => {
+  try {
+    const { type } = req.query; // student, teacher, staff
+    if (!type) return res.status(400).json({ error: 'Type parameter required' });
+
+    const today = new Date().toISOString().slice(0, 10);
+    let query, params;
+
+    if (type === 'student') {
+      query = `
+        SELECT al.*, s.first_name, s.last_name, c.name as class_name
+        FROM attendance_logs al
+        LEFT JOIN students s ON al.entity_id = s.id
+        LEFT JOIN classes c ON s.class_id = c.id
+        WHERE al.entity_type = 'student' AND al.date = ?
+        ORDER BY al.created_at DESC
+      `;
+      params = [today];
+    } else if (type === 'teacher') {
+      query = `
+        SELECT al.*, t.first_name, t.last_name
+        FROM attendance_logs al
+        LEFT JOIN teachers t ON al.entity_id = t.id
+        WHERE al.entity_type = 'teacher' AND al.date = ?
+        ORDER BY al.created_at DESC
+      `;
+      params = [today];
+    } else if (type === 'staff') {
+      query = `
+        SELECT al.*, st.first_name, st.last_name
+        FROM attendance_logs al
+        LEFT JOIN staff st ON al.entity_id = st.id
+        WHERE al.entity_type = 'staff' AND al.date = ?
+        ORDER BY al.created_at DESC
+      `;
+      params = [today];
+    } else {
+      return res.status(400).json({ error: 'Invalid type. Must be student, teacher, or staff' });
+    }
+
+    const rows = await all(query, params);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/attendance/mark', authMiddleware, async (req, res) => {
+  try {
+    const { entity_type, entity_id, date, status, remarks } = req.body;
+    if (!entity_type || !entity_id || !date || !status) {
+      return res.status(400).json({ error: 'entity_type, entity_id, date, and status are required' });
+    }
+    if (!['Present', 'Absent', 'Late'].includes(status)) {
+      return res.status(400).json({ error: 'Status must be Present, Absent, or Late' });
+    }
+
+    // Insert or replace (UPSERT)
+    await run(`
+      INSERT OR REPLACE INTO attendance_logs (entity_type, entity_id, date, status, remarks)
+      VALUES (?, ?, ?, ?, ?)
+    `, [entity_type, entity_id, date, status, remarks || '']);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ---- Receipts (payments) ----
+app.get('/api/receipts', authMiddleware, async (req, res) => {
+  try {
+    const rows = await all('SELECT * FROM receipts ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/receipts', authMiddleware, async (req, res) => {
+  try {
+    const { invoice_id, amount, method, reference } = req.body;
+    if (!amount || Number(amount) <= 0) return res.status(400).json({ error: 'Amount must be > 0' });
+    const r = await run('INSERT INTO receipts (invoice_id, amount, method, reference) VALUES (?, ?, ?, ?)', [invoice_id || null, Number(amount), method || null, reference || null]);
+
+    // If linked to an invoice, update invoice status based on total paid
+    if (invoice_id) {
+      const inv = await get('SELECT amount FROM invoices WHERE id = ?', [invoice_id]);
+      if (inv) {
+        const paidRow = await get('SELECT SUM(amount) as total FROM receipts WHERE invoice_id = ?', [invoice_id]);
+        const totalPaid = paidRow?.total || 0;
+        const newStatus = totalPaid >= inv.amount ? 'Paid' : 'Under Review';
+        await run('UPDATE invoices SET status = ? WHERE id = ?', [newStatus, invoice_id]);
+      }
+    }
+
+    const rec = await get('SELECT * FROM receipts WHERE id = ?', [r.lastID]);
+    res.json(rec);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ---- Expenses ----
+app.get('/api/expenses', authMiddleware, async (req, res) => {
+  try {
+    const rows = await all('SELECT * FROM expenses ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/expenses', authMiddleware, async (req, res) => {
+  try {
+    const { title, amount, category } = req.body;
+    if (!title || !amount || Number(amount) <= 0) return res.status(400).json({ error: 'Title and amount are required' });
+    const r = await run('INSERT INTO expenses (title, amount, category) VALUES (?, ?, ?)', [title, Number(amount), category || null]);
+    const exp = await get('SELECT * FROM expenses WHERE id = ?', [r.lastID]);
+    res.json(exp);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+// ---- Finance summary ----
+app.get('/api/finance/summary', authMiddleware, async (req, res) => {
+  try {
+    const rec = await get('SELECT COALESCE(SUM(amount),0) as total FROM receipts', []);
+    const exp = await get('SELECT COALESCE(SUM(amount),0) as total FROM expenses', []);
+    const totalReceipts = rec?.total || 0;
+    const totalExpenses = exp?.total || 0;
+    const bankBalance = totalReceipts - totalExpenses;
+    res.json({ totalReceipts, totalExpenses, bankBalance });
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 

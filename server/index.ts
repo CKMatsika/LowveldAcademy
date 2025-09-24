@@ -1003,5 +1003,122 @@ export function createServer() {
     }
   });
 
+  // ---- Users management (for Settings page) ----
+  // Ensures users table has is_active column (no-op if already exists)
+  async function ensureUsersIsActiveColumn() {
+    try {
+      const cols = await all<{ name: string }>(`PRAGMA table_info(users)`);
+      if (!cols.some((c) => c.name === "is_active")) {
+        await run(`ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1`);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  app.get("/api/users", authMiddleware, async (req, res) => {
+    try {
+      await ensureUsersIsActiveColumn();
+      const rows = await all("SELECT id, name, email, role, COALESCE(is_active,1) as is_active FROM users ORDER BY id DESC");
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  app.post("/api/users", authMiddleware, async (req, res) => {
+    try {
+      await ensureUsersIsActiveColumn();
+      const { name, email, password, role } = req.body || {};
+      if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+      const hashed = await bcrypt.hash(password, 10);
+      const r = await run("INSERT INTO users (name, email, password, role, is_active) VALUES (?, ?, ?, ?, 1)", [name || "", email, hashed, role || "Teacher"]);
+      const user = await get("SELECT id, name, email, role, COALESCE(is_active,1) as is_active FROM users WHERE id = ?", [r.lastID]);
+      res.json(user);
+    } catch (err: any) {
+      if (err?.message?.includes("SQLITE_CONSTRAINT")) return res.status(400).json({ error: "Email already exists" });
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  app.put("/api/users/:id", authMiddleware, async (req, res) => {
+    try {
+      await ensureUsersIsActiveColumn();
+      const { is_active, name, role } = req.body || {};
+      if (typeof is_active !== "undefined") {
+        await run("UPDATE users SET is_active = ? WHERE id = ?", [is_active ? 1 : 0, req.params.id]);
+      }
+      if (name || role) {
+        await run("UPDATE users SET name = COALESCE(?, name), role = COALESCE(?, role) WHERE id = ?", [name || null, role || null, req.params.id]);
+      }
+      const user = await get("SELECT id, name, email, role, COALESCE(is_active,1) as is_active FROM users WHERE id = ?", [req.params.id]);
+      if (!user) return res.status(404).json({ error: "Not found" });
+      res.json(user);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  // ---- Parent registration (public) ----
+  app.post("/api/parents/register", async (req, res) => {
+    try {
+      const { name, email, password, phone, address } = req.body || {};
+      if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+      const hashed = await bcrypt.hash(password, 10);
+      const r = await run("INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)", [name || "", email, hashed, "Parent"]);
+      // Optionally create guardian record
+      try {
+        await run("INSERT INTO guardians (first_name, last_name, phone, email, address) VALUES (?, ?, ?, ?, ?)", [name || "", "", phone || null, email, address || null]);
+      } catch {}
+      const user = await get<any>("SELECT id, name, email, role FROM users WHERE id = ?", [r.lastID]);
+      const token = signToken({ id: user?.id, email: user?.email, role: user?.role });
+      return res.json({ user, token, message: "Registration successful" });
+    } catch (err: any) {
+      if (err?.message?.includes("SQLITE_CONSTRAINT")) return res.status(400).json({ error: "Email already exists" });
+      console.error(err);
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  // ---- Reports ----
+  app.get("/api/reports/attendance", authMiddleware, async (req, res) => {
+    try {
+      const { startDate, endDate, classId, studentId } = req.query as any;
+      const params: any[] = [];
+      let where = " WHERE a.date IS NOT NULL ";
+      if (startDate) { where += " AND a.date >= ?"; params.push(String(startDate)); }
+      if (endDate) { where += " AND a.date <= ?"; params.push(String(endDate)); }
+      if (classId) { where += " AND s.class_id = ?"; params.push(Number(classId)); }
+      if (studentId) { where += " AND s.id = ?"; params.push(Number(studentId)); }
+      const rows = await all(
+        `SELECT a.id, a.date, a.status, a.remarks as notes,
+                (s.first_name || ' ' || s.last_name) as student_name,
+                c.name as class_name
+         FROM attendance_logs a
+         JOIN students s ON s.id = a.entity_id AND a.entity_type = 'student'
+         LEFT JOIN classes c ON c.id = s.class_id
+         ${where}
+         ORDER BY a.date DESC, s.last_name ASC`
+      , params);
+      res.json(rows);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  app.get("/api/reports/performance", authMiddleware, async (req, res) => {
+    try {
+      // Not implemented yet - return empty array for now
+      res.json([]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
   return app;
 }
