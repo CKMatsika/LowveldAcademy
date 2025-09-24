@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: lowveld-academy
+    env: node
+    buildCommand: cd LowveldAcademyApp && npm install
+    startCommand: cd LowveldAcademyApp && npm start
+    rootDir: .
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
