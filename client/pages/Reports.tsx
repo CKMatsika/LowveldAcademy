@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Tabs, DatePicker, Select, Button, Table, Space, message } from 'antd';
+import { Card, Tabs, DatePicker, Select, Button, Table, Space, message, Alert } from 'antd';
 import { DownloadOutlined, FilePdfOutlined, FileExcelOutlined } from '@ant-design/icons';
-import { api } from '../lib/api';
+import { apiFetch } from '@/lib/api';
 import type { TabsProps } from 'antd';
 import dayjs from 'dayjs';
 
@@ -31,11 +31,11 @@ const Reports: React.FC = () => {
     const fetchData = async () => {
       try {
         const [classesRes, studentsRes] = await Promise.all([
-          api.get('/api/classes'),
-          api.get('/api/students'),
+          apiFetch<any[]>('/api/classes'),
+          apiFetch<any[]>('/api/students'),
         ]);
-        setClasses(classesRes.data || []);
-        setStudents(studentsRes.data || []);
+        setClasses(classesRes || []);
+        setStudents(studentsRes || []);
       } catch (error) {
         message.error('Failed to load filter data');
       }
@@ -65,8 +65,16 @@ const Reports: React.FC = () => {
         endpoint = '/api/reports/performance';
       }
 
-      const response = await api.get(endpoint, { params });
-      setReportData(response.data || []);
+      // Build query string for apiFetch
+      const qs = new URLSearchParams(
+        Object.entries(params).reduce((acc, [k, v]) => {
+          if (v !== undefined && v !== null && v !== '') acc[k] = String(v);
+          return acc;
+        }, {} as Record<string, string>)
+      ).toString();
+
+      const data = await apiFetch<ReportData[]>(`${endpoint}${qs ? `?${qs}` : ''}`);
+      setReportData(data || []);
     } catch (error) {
       message.error('Failed to load report data');
     } finally {
@@ -115,13 +123,24 @@ const Reports: React.FC = () => {
       key: 'performance',
       label: 'Performance',
       children: (
-        <Table
-          columns={performanceColumns}
-          dataSource={reportData}
-          loading={loading}
-          rowKey="id"
-          pagination={{ pageSize: 10 }}
-        />
+        <>
+          {(!loading && (!reportData || reportData.length === 0)) ? (
+            <Alert
+              type="info"
+              showIcon
+              message="Performance reports are coming soon"
+              description="Once performance data is recorded, it will appear here automatically."
+            />
+          ) : (
+            <Table
+              columns={performanceColumns}
+              dataSource={reportData}
+              loading={loading}
+              rowKey="id"
+              pagination={{ pageSize: 10 }}
+            />
+          )}
+        </>
       ),
     },
   ];
